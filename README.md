@@ -1,0 +1,1 @@
+# kassa24fiscalizer
