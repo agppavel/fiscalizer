@@ -15,7 +15,7 @@ type FiscalizationResult struct {
 	Receipt          string `json:"Reciept"`
 }
 
-func (self *Kkm) send_operation(operation fiscal_operation, document document) (result FiscalizationResult, err error) {
+func (self *Kkm) SendDocument(operation fiscal_operation, document document) (result FiscalizationResult, err error) {
 
 	var (
 		payload []byte
