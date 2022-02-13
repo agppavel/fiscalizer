@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 )
 
 type Kkm struct {
@@ -16,10 +17,34 @@ type Kkm struct {
 	uid       string
 	token     string
 	host      string
+	queue     chan document
+	result    chan FiscalizationResult
 }
 
 func NewKkm(kkm_id int, kkm_login, kkm_pass string) *Kkm {
-	return &Kkm{kkm_id: kkm_id, kkm_login: kkm_login, kkm_pass: kkm_pass}
+	kkm := Kkm{kkm_id: kkm_id, kkm_login: kkm_login, kkm_pass: kkm_pass}
+	kkm.queue = make(chan document)
+	kkm.result = make(chan FiscalizationResult)
+	kkm.run()
+	return &kkm
+}
+
+func (self *Kkm) run() {
+
+	var (
+		doc document
+		err error
+		res FiscalizationResult
+	)
+
+	for {
+		doc = <-self.queue
+		res, err = send_document(doc)
+		if err != nil {
+			res.Err = err
+		}
+		self.result <- res
+	}
 }
 
 func (self *Kkm) auth() (err error) {
@@ -28,8 +53,8 @@ func (self *Kkm) auth() (err error) {
 		body []byte
 	)
 	var respbody struct {
-		Response
-		Data AuthResponse `json:"Data,omitempty"`
+		response
+		Data auth_response `json:"Data,omitempty"`
 	}
 	jsonData := map[string]string{"Login": self.kkm_login, "Password": self.kkm_pass}
 
@@ -73,7 +98,7 @@ func (self *Kkm) recover_uid() (err error) {
 		status int
 	)
 	var uid_resp struct {
-		Response
+		response
 		Data struct {
 			Uid string `json:"Uid" `
 		} `json:"Data" `
@@ -126,5 +151,63 @@ func (self *Kkm) make_fiscal_request(payload []byte, operation fiscal_operation)
 	}
 
 	body, err = ioutil.ReadAll(res.Body)
+	return
+}
+
+func (self *Kkm) send_document(doc document) (result FiscalizationResult, err error) {
+
+	var (
+		payload []byte
+	)
+
+	var resp struct {
+		response
+		Data FiscalizationResult `json:"Data"`
+	}
+
+	payload, err = json.Marshal(document)
+	if err != nil {
+		return
+	}
+
+reqloop:
+	for {
+		status, body, err = self.make_fiscalrequest(payload, doc.doc_type)
+		if err != nil {
+			return
+		}
+		switch status {
+		case 200:
+			break reqloop
+		case 208:
+			break reqloop
+		case 449:
+			continue reqloop
+		case 452:
+			err = self.recover_uid()
+			if err != nil {
+				return
+			}
+			continue reqloop
+		case 401:
+			err = self.auth()
+			if err != nil {
+				return
+			}
+			continue reqloop
+		default:
+			data, _ := ioutil.ReadAll(res.Body)
+			err = errors.New("Fiscalization error: " + strconv.Itoa(res.StatusCode) + string(data))
+			return
+
+		}
+	}
+
+	err = json.Unmarshal(body, &resp)
+	if err != nil {
+		return
+	}
+
+	result = resp.Data
 	return
 }

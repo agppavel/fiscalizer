@@ -12,7 +12,7 @@ import (
 func (self *Kkm) OpenShift() (err error) {
 	var (
 		res      *http.Response
-		respbody Response
+		respbody response
 		body     []byte
 	)
 	jsonData := map[string]string{"IdKkm": self.kkm_id}
